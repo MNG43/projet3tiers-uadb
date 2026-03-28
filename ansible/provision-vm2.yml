@@ -1,0 +1,130 @@
+---
+- name: Provisionner VM2 - Serveur Web
+  hosts: localhost
+  become: yes
+  vars:
+    app_dir: /var/www/app
+    node_version: 20
+    db_host: 192.168.10.10
+    db_user: webapp
+    db_password: WebApp2024!Secure
+    db_name: projet3tiers
+
+  tasks:
+    - name: Mettre à jour le système
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Installer les dépendances système
+      apt:
+        name:
+          - curl
+          - git
+          - nginx
+          - mysql-client
+          - ufw
+        state: present
+
+    - name: Installer Node.js
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash -
+        apt install -y nodejs
+      args:
+        creates: /usr/bin/node
+
+    - name: Créer le répertoire de l'application
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: 0755
+
+    - name: Copier l'application depuis GitHub (MNG43)
+      git:
+        # Utilisation de HTTPS pour passer le firewall pfSense
+        repo: "https://github.com/MNG43/projet3tiers.git"
+        dest: "{{ app_dir }}"
+        version: main
+        force: yes
+
+    - name: Installer les dépendances npm
+      npm:
+        path: "{{ app_dir }}"
+        production: yes
+        state: present
+
+    - name: Configurer le service systemd
+      copy:
+        content: |
+          [Unit]
+          Description=Projet 3-Tiers Node.js
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=www-data
+          WorkingDirectory={{ app_dir }}
+          ExecStart=/usr/bin/node {{ app_dir }}/index.js
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/nodeapp.service
+        mode: 0644
+
+    - name: Démarrer et activer nodeapp
+      systemd:
+        name: nodeapp
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Configurer Nginx
+      copy:
+        content: |
+          server {
+              listen 80;
+              server_name _;
+              location / {
+                  proxy_pass http://127.0.0.1:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
+          }
+        dest: /etc/nginx/sites-available/projet3tiers
+        mode: 0644
+
+    - name: Activer le site
+      file:
+        src: /etc/nginx/sites-available/projet3tiers
+        dest: /etc/nginx/sites-enabled/projet3tiers
+        state: link
+
+    - name: Désactiver le site par défaut
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Redémarrer Nginx
+      systemd:
+        name: nginx
+        state: restarted
+
+    - name: Configurer UFW (Firewall Local VM2)
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - 22
+        - 80
+
+    - name: Activer UFW
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
