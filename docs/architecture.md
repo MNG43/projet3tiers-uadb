@@ -1,10 +1,39 @@
-# Architecture 3-Tiers
-
-## Topologie
-- **DMZ**: 192.168.100.0/24 (Serveur Web)
-- **LAN**: 192.168.10.0/24 (Serveur BD, pfSense)
+## Topologie réseau
+┌─────────────────┐
+│ INTERNET │
+└────────┬────────┘
+│
+┌────────▼────────┐
+│ VM1 - pfSense │
+│ WAN: DHCP │
+│ LAN: 192.168.10.1/24
+│ DMZ: 192.168.100.1/24
+└────────┬────────┘
+│
+┌────────────────────┼────────────────────┐
+│ │ │
+▼ ▼ ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│ LAN │ │ DMZ │ │ │
+│ 192.168.10.0 │ │192.168.100.0 │ │ │
+│ │ │ │ │ │
+│ ┌───────────┐ │ │ ┌───────────┐ │ │ │
+│ │ VM3 │ │ │ │ VM2 │ │ │ │
+│ │ MySQL │ │ │ │ Node.js │ │ │ │
+│ │:3306 │ │ │ │ Nginx :80 │ │ │ │
+│ └───────────┘ │ │ └───────────┘ │ │ │
+└───────────────┘ └───────────────┘ └───────────────┘
 
 ## Flux réseau
-- Internet → pfSense (NAT) → VM2 (port 80)
-- VM2 → VM3 (port 3306) pour accès MySQL
-- VM3 ← VM2 uniquement
+| Source | Destination | Port | Protocole | Description |
+|--------|-------------|------|-----------|-------------|
+| Internet | VM2 (DMZ) | 80 | TCP | Accès au site web |
+| VM2 (DMZ) | VM3 (LAN) | 3306 | TCP | Requêtes MySQL |
+| LAN | Internet | * | * | Accès sortant |
+| DMZ | Internet | 80,443 | TCP | Accès sortant limité |
+
+## Règles firewall (pfSense)
+- DMZ → LAN : Bloquer (sauf MySQL depuis VM2)
+- LAN → DMZ : Autoriser HTTP/HTTPS
+- DMZ → Internet : Autoriser HTTP/HTTPS/DNS
+

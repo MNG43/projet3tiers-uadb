@@ -1,0 +1,8 @@
+
+# Variables globales
+db_host: 192.168.10.10
+db_user: webapp
+db_password: WebApp2024!Secure
+db_name: projet3tiers
+app_dir: /var/www/app
+node_version: 20

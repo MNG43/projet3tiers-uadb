@@ -1,23 +1,34 @@
 # Projet 3-Tiers UADB
 
 ## Architecture
-| VM | Rôle | IP | Services |
-|----|------|-----|----------|
-| VM1 | pfSense | LAN: 192.168.10.1, DMZ: 192.168.100.1 | Firewall, NAT, DHCP |
-| VM2 | Serveur Web | 192.168.100.10 | Nginx, Node.js |
-| VM3 | Serveur BD | 192.168.10.10 | MySQL 8 |
+- **VM1** : pfSense (Firewall, NAT, DHCP)
+- **VM2** : Serveur Web (Node.js + Nginx)
+- **VM3** : Base de données (MySQL)
 
-## Déploiement depuis GitHub
+## Déploiement complet depuis GitHub
 
-### Provisionner VM2
+### Prérequis
+- 3 VMs avec Ubuntu 22.04 pour VM2 et VM3
+- 1 VM avec pfSense pour VM1
+- Accès SSH entre les VMs
+
+### 1. Provisionner VM1 (pfSense)
+Voir [pfsense/configuration.md](pfsense/configuration.md)
+
+### 2. Provisionner VM3 (Base de données)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MNG43/projet3tiers-uadb/main/scripts/bootstrap-vm.sh | bash -s webserver
-Provisionner VM3
-bash
+ansible-playbook -i ansible/inventory.ini ansible/db.yml
+3. Provisionner VM2 (Serveur Web)
+ansible-playbook -i ansible/inventory.ini ansible/web.yml
+4. Tester la communication
+./scripts/test-connect.sh
+Vérification
 
-curl -fsSL https://raw.githubusercontent.com/MNG43/projet3tiers-uadb/main/scripts/bootstrap-vm.sh | bash -s database
+    URL : http://192.168.100.10
+
+    API : http://192.168.100.10/api/status
+
+    MySQL : depuis VM2 → mysql -h 192.168.10.10 -u webapp -p
+
 Auteurs
-
-UADB - Module Virtualisation & Cloud
-
-
+MNG-UADB - Module Virtualisation & Cloud

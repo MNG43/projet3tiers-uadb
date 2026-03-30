@@ -1,0 +1,79 @@
+
+---
+- name: Provisionner VM3 - Base de données MySQL
+  hosts: db
+  become: yes
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    - name: Mettre à jour le cache apt
+      apt:
+        update_cache: yes
+
+    - name: Installer MySQL
+      apt:
+        name: mysql-server
+        state: present
+
+    - name: Démarrer et activer MySQL
+      service:
+        name: mysql
+        state: started
+        enabled: yes
+
+    - name: Configurer MySQL pour écoute externe
+      lineinfile:
+        path: /etc/mysql/mysql.conf.d/mysqld.cnf
+        regexp: '^bind-address'
+        line: 'bind-address = 0.0.0.0'
+
+    - name: Redémarrer MySQL
+      service:
+        name: mysql
+        state: restarted
+
+    - name: Créer la base de données
+      mysql_db:
+        name: "{{ db_name }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Créer l'utilisateur webapp
+      mysql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "{{ db_name }}.*:ALL"
+        host: '%'
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Créer la table utilisateurs
+      shell: |
+        mysql -e "USE {{ db_name }}; CREATE TABLE IF NOT EXISTS utilisateurs (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          nom VARCHAR(100) NOT NULL,
+          email VARCHAR(150) UNIQUE NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"
+
+    - name: Insérer données de test
+      shell: |
+        mysql -e "USE {{ db_name }}; INSERT INTO utilisateurs (nom, email) VALUES
+          ('Moussa DIALLO', 'moussa@uadb.sn'),
+          ('Fatou NDIAYE', 'fatou@uadb.sn'),
+          ('Ibou FALL', 'ibou@uadb.sn')
+        ON DUPLICATE KEY UPDATE nom=VALUES(nom);"
+      ignore_errors: yes
+
+    - name: Ouvrir le port 3306 dans le firewall
+      ufw:
+        rule: allow
+        port: '3306'
+        proto: tcp
+
+    - name: Activer UFW
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming

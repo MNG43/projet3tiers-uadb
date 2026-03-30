@@ -1,32 +1,26 @@
 ---
-- name: Provisionner VM2 - Serveur Web
-  hosts: localhost
+- name: Provisionner VM2 - Serveur Web (Node.js + Nginx)
+  hosts: web
   become: yes
-  vars:
-    app_dir: /var/www/app
-    node_version: 20
-    db_host: 192.168.10.10
-    db_user: webapp
-    db_password: WebApp2024!Secure
-    db_name: projet3tiers
+  vars_files:
+    - group_vars/all.yml
 
   tasks:
-    - name: Mettre à jour le système
+    - name: Mettre à jour le cache apt
       apt:
         update_cache: yes
-        upgrade: dist
 
-    - name: Installer les dépendances système
+    - name: Installer les dépendances
       apt:
         name:
-          - curl
           - git
+          - curl
           - nginx
           - mysql-client
           - ufw
         state: present
 
-    - name: Installer Node.js
+    - name: Installer Node.js {{ node_version }}.x
       shell: |
         curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash -
         apt install -y nodejs
@@ -41,38 +35,54 @@
         group: www-data
         mode: 0755
 
-    - name: Copier l'application depuis GitHub (MNG43)
+    - name: Cloner le dépôt GitHub
       git:
-        repo: "https://github.com/MNG43/projet3tiers-uadb.git"
+        repo: https://github.com/MNG43/projet-3tiers.git
         dest: "{{ app_dir }}"
         version: main
         force: yes
+      become_user: www-data
 
     - name: Installer les dépendances npm
       npm:
         path: "{{ app_dir }}"
         production: yes
         state: present
+      become_user: www-data
+
+    - name: Créer le fichier .env
+      copy:
+        content: |
+          DB_HOST={{ db_host }}
+          DB_USER={{ db_user }}
+          DB_PASS={{ db_password }}
+          DB_NAME={{ db_name }}
+          PORT=3000
+        dest: "{{ app_dir }}/.env"
+        owner: www-data
+        group: www-data
+        mode: 0640
 
     - name: Configurer le service systemd
       copy:
+        dest: /etc/systemd/system/nodeapp.service
         content: |
           [Unit]
-          Description=Projet 3-Tiers Node.js
+          Description=Projet 3-Tiers Node.js App
           After=network.target
 
           [Service]
           Type=simple
           User=www-data
+          Group=www-data
           WorkingDirectory={{ app_dir }}
           ExecStart=/usr/bin/node {{ app_dir }}/index.js
           Restart=always
           RestartSec=5
+          Environment=NODE_ENV=production
 
           [Install]
           WantedBy=multi-user.target
-        dest: /etc/systemd/system/nodeapp.service
-        mode: 0644
 
     - name: Démarrer et activer nodeapp
       systemd:
@@ -81,21 +91,23 @@
         enabled: yes
         daemon_reload: yes
 
-    - name: Configurer Nginx
+    - name: Configurer Nginx reverse proxy
       copy:
+        dest: /etc/nginx/sites-available/projet3tiers
         content: |
           server {
               listen 80;
               server_name _;
+              access_log /var/log/nginx/projet3tiers.log;
               location / {
                   proxy_pass http://127.0.0.1:3000;
                   proxy_http_version 1.1;
                   proxy_set_header Host $host;
                   proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
               }
+              server_tokens off;
           }
-        dest: /etc/nginx/sites-available/projet3tiers
-        mode: 0644
 
     - name: Activer le site
       file:
@@ -109,18 +121,15 @@
         state: absent
 
     - name: Redémarrer Nginx
-      systemd:
+      service:
         name: nginx
         state: restarted
 
-    - name: Configurer UFW (Firewall Local VM2)
+    - name: Ouvrir le port 80 dans le firewall
       ufw:
         rule: allow
-        port: "{{ item }}"
+        port: '80'
         proto: tcp
-      loop:
-        - 22
-        - 80
 
     - name: Activer UFW
       ufw:
